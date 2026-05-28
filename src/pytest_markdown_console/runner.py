@@ -40,7 +40,7 @@ def _pwd_cmd(shell: str) -> str:
 def _run(cmd: str, cwd: str, shell: str | None = None, **kwargs: object) -> subprocess.CompletedProcess:
     """Run *cmd* in the given shell (or the platform default if None)."""
     resolved = shell or ("pwsh" if _WINDOWS else "sh")
-    return subprocess.run(_build_argv(cmd, resolved), cwd=cwd, **kwargs)  # type: ignore[call-overload]
+    return subprocess.run(_build_argv(cmd, resolved), cwd=cwd, **kwargs)  # type: ignore[call-overload]  # noqa: S603 PLW1510
 
 
 def matches(expected: str, actual: str) -> bool:
