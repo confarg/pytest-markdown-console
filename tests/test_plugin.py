@@ -41,7 +41,7 @@ def test_collects_md_files(pytester, md, source):
 @pytest.mark.parametrize(
     "source",
     [
-        "```console notest\n$ echo hi\n```\n",
+        "<!-- pytest-markdown-console: notest -->\n```console\n$ echo hi\n```\n",
         "```console\n```\n",
     ],
     ids=["notest_flag", "empty_block"],
@@ -95,12 +95,30 @@ def test_output_mismatch_reported(pytester, md):
     result.stdout.fnmatch_lines(["*Expected*", "*Got*"])
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="uses pwsh Write-Output")
+def test_output_mismatch_reported_windows(pytester, md):
+    """An output mismatch produces a failure with Expected/Got in the report (Windows)."""
+    md("```console\n$ Write-Output hello\nwrong\n```\n")
+    result = pytester.runpytest("-v")
+    result.assert_outcomes(failed=1)
+    result.stdout.fnmatch_lines(["*Expected*", "*Got*"])
+
+
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows-only: uses 'exit 1'")
 def test_unexpected_command_failure_windows(pytester, md):
     """A command that exits non-zero without expect_failure produces a failure."""
     md("```console\n$ exit 1\n```\n")
     result = pytester.runpytest("-v")
     result.assert_outcomes(failed=1)
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="uses pwsh Write-Error")
+def test_command_failure_stderr_in_report_windows(pytester, md):
+    """A failing command with stderr output includes a Stderr section in the report."""
+    md("```console\n$ Write-Error 'oops'; exit 1\n```\n")
+    result = pytester.runpytest("-v")
+    result.assert_outcomes(failed=1)
+    result.stdout.fnmatch_lines(["*Stderr*"])
 
 
 # ---------------------------------------------------------------------------
@@ -125,6 +143,15 @@ def test_unexpected_success_fails(pytester, md):
     result.stdout.fnmatch_lines(["*Expected a non-zero exit code*"])
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="uses pwsh Write-Output")
+def test_unexpected_success_fails_windows(pytester, md):
+    """A command annotated with # Error: that succeeds is a failing test (Windows)."""
+    md("```console\n$ Write-Output hi  # Error:\n```\n")
+    result = pytester.runpytest("-v")
+    result.assert_outcomes(failed=1)
+    result.stdout.fnmatch_lines(["*Expected a non-zero exit code*"])
+
+
 # ---------------------------------------------------------------------------
 # Platform filtering
 # ---------------------------------------------------------------------------
@@ -140,7 +167,7 @@ def test_unexpected_success_fails(pytester, md):
 )
 def test_platform_only(pytester, md, platform_token, expected_outcome):
     """platform: token runs the block on matching platforms and skips it on others."""
-    md(f"```console platform:{platform_token}\n$ echo hi\n```\n")
+    md(f"<!-- pytest-markdown-console: platform:{platform_token} -->\n```console\n$ echo hi\n```\n")
     if expected_outcome == "collected":
         result = pytester.runpytest("--collect-only", "-q")
         result.stdout.fnmatch_lines(["*console*"])
@@ -151,7 +178,7 @@ def test_platform_only(pytester, md, platform_token, expected_outcome):
 
 def test_platform_skip_current(pytester, md):
     """platform:!<current> causes the block to be skipped on this platform."""
-    md(f"```console platform:!{sys.platform}\n$ echo hi\n```\n")
+    md(f"<!-- pytest-markdown-console: platform:!{sys.platform} -->\n```console\n$ echo hi\n```\n")
     result = pytester.runpytest("-v")
     result.assert_outcomes(skipped=1)
 
@@ -165,7 +192,7 @@ def test_cwd_override_valid(pytester, md):
     """cwd: pointing to an existing directory runs the command there."""
     subdir = pytester.path / "sub"
     subdir.mkdir()
-    md("```console cwd:sub\n$ echo ok\nok\n```\n")
+    md("<!-- pytest-markdown-console: cwd:sub -->\n```console\n$ echo ok\nok\n```\n")
     result = pytester.runpytest("-v")
     # Windows echo adds a trailing space; just check it didn't crash badly
     assert result.ret in (0, 1)
@@ -173,7 +200,7 @@ def test_cwd_override_valid(pytester, md):
 
 def test_cwd_override_missing_raises(pytester, md):
     """cwd: pointing to a missing directory causes the test to fail."""
-    md("```console cwd:nonexistent\n$ echo ok\n```\n")
+    md("<!-- pytest-markdown-console: cwd:nonexistent -->\n```console\n$ echo ok\n```\n")
     result = pytester.runpytest("-v")
     result.assert_outcomes(failed=1)
 

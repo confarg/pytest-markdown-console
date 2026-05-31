@@ -34,6 +34,7 @@ from pytest_markdown_console.runner import (
     ids=["pwsh", "powershell", "cmd", "sh", "bash", "zsh"],
 )
 def test_build_argv(shell, cmd, expected):
+    """_build_argv() produces the correct argv list for each shell."""
     assert _build_argv(cmd, shell) == expected
 
 
@@ -51,9 +52,21 @@ def test_build_argv(shell, cmd, expected):
         ("bash", False, "&&"),
         ("bash", True, ";"),
     ],
-    ids=["pwsh_ok", "pwsh_fail", "powershell_ok", "powershell_fail", "cmd_ok", "cmd_fail", "sh_ok", "sh_fail", "bash_ok", "bash_fail"],
+    ids=[
+        "pwsh_ok",
+        "pwsh_fail",
+        "powershell_ok",
+        "powershell_fail",
+        "cmd_ok",
+        "cmd_fail",
+        "sh_ok",
+        "sh_fail",
+        "bash_ok",
+        "bash_fail",
+    ],
 )
 def test_separator(shell, expect_failure, expected):
+    """_separator() returns the correct shell-specific command separator."""
     assert _separator(shell, expect_failure) == expected
 
 
@@ -70,6 +83,7 @@ def test_separator(shell, expect_failure, expected):
     ids=["pwsh", "powershell", "cmd", "sh", "bash", "zsh"],
 )
 def test_pwd_cmd(shell, expected):
+    """_pwd_cmd() returns the correct pwd command for each shell."""
     assert _pwd_cmd(shell) == expected
 
 
@@ -198,6 +212,17 @@ def test_run_command_expected_failure_output_mismatch_raises(mock_run, tmp_path)
     mock_run.return_value = _make_result(stdout="", stderr="wrong error\n", returncode=1)
     with pytest.raises(ConsoleOutputMismatch):
         run_command(Command(cmd="false", expected_output="expected error", expect_failure=True), str(tmp_path))
+
+
+@patch("pytest_markdown_console.runner.subprocess.run")
+def test_run_command_returns_original_cwd_when_pwd_output_invalid(mock_run, tmp_path):
+    """run_command returns the original cwd when the pwd probe produces no valid directory path."""
+    mock_run.side_effect = [
+        _make_result(stdout="hello\n", returncode=0),
+        _make_result(stdout="not_a_real_directory_xyz_abc\n", returncode=0),
+    ]
+    result = run_command(Command(cmd="echo hello", expected_output="hello"), str(tmp_path))
+    assert result == str(tmp_path)
 
 
 # ---------------------------------------------------------------------------

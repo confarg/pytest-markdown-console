@@ -29,7 +29,8 @@ class MarkdownFile(pytest.File):
     def collect(self) -> Generator[ConsoleBlockItem, None, None]:
         """Yield a ConsoleBlockItem for each testable console block."""
         source = self.path.read_text(encoding="utf-8")
-        blocks = parse_blocks(source)
+        directive = self.config.getini("markdown_console_directive") or "pytest-markdown-console"
+        blocks = parse_blocks(source, directive=directive)
         for idx, block in enumerate(blocks):
             if not block.commands or block.notest:
                 continue
@@ -71,8 +72,6 @@ class ConsoleBlockItem(pytest.Item):
         effective_shell = self.block.shell or ini_shell
 
         for command in self.block.commands:
-            if not command.cmd.strip():
-                continue
             cwd = run_command(command, cwd, shell=effective_shell)
 
     def repr_failure(self, excinfo: pytest.ExceptionInfo[BaseException]) -> str | pytest.TerminalRepr:
@@ -97,12 +96,20 @@ class ConsoleBlockItem(pytest.Item):
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
-    """Register the markdown_console_shell ini option."""
+    """Register ini options for pytest-markdown-console."""
     parser.addini(
         "markdown_console_shell",
-        help="Default shell for console blocks (pwsh, cmd, sh, bash, zsh, …). Defaults to pwsh on Windows, sh elsewhere.",
+        help=(
+            "Default shell for console blocks (pwsh, cmd, sh, bash, zsh, …). Defaults to pwsh on Windows, sh elsewhere."
+        ),
         type="string",
         default=None,
+    )
+    parser.addini(
+        "markdown_console_directive",
+        help='HTML comment tag for directives (default: "pytest-markdown-console").',
+        type="string",
+        default="pytest-markdown-console",
     )
 
 

@@ -6,7 +6,7 @@ import re
 
 from .models import Command, ConsoleBlock
 
-_FENCE_OPEN = re.compile(r"^```\s*console(?:\s+(.+?))?\s*$", re.IGNORECASE)
+_FENCE_OPEN = re.compile(r"^```\s*console\b", re.IGNORECASE)
 _FENCE_CLOSE = re.compile(r"^```\s*$")
 
 
@@ -42,29 +42,29 @@ def _strip_error_comment(cmd: str) -> tuple[str, bool]:
     return cmd, False
 
 
-def _parse_fence_tokens(
+def _parse_directive_tokens(
     tokens_str: str,
 ) -> tuple[bool, str | None, frozenset[str], frozenset[str], str | None]:
-    """Return (notest, cwd_override, only_platforms, skip_platforms, shell) from a fence token string."""
+    """Return (notest, cwd_override, only_platforms, skip_platforms, shell) from a directive token string."""
     notest = False
     cwd_override: str | None = None
     only: set[str] = set()
     skip: set[str] = set()
     shell: str | None = None
     for token in tokens_str.split():
-        if token == "notest":
+        if token == "notest":  # noqa: S105
             notest = True
         elif token.startswith("cwd:"):
-            cwd_override = token[len("cwd:"):]
+            cwd_override = token[len("cwd:") :]
         elif token.startswith("shell:"):
-            shell = token[len("shell:"):]
+            shell = token[len("shell:") :]
         elif token.startswith("platform:"):
-            for p in token[len("platform:"):].split(","):
-                p = p.strip()
-                if p.startswith("!"):
-                    skip.add(p[1:])
-                elif p:
-                    only.add(p)
+            for p in token[len("platform:") :].split(","):
+                name = p.strip()
+                if name.startswith("!"):
+                    skip.add(name[1:])
+                elif name:
+                    only.add(name)
     return notest, cwd_override, frozenset(only), frozenset(skip), shell
 
 
@@ -77,7 +77,7 @@ def _handle_dollar_line(
     raw: str,
     current_cmd: Command | None,
     current_block: ConsoleBlock | None,
-    pending_failure: bool,
+    pending_failure: bool,  # noqa: FBT001
 ) -> tuple[Command | None, bool]:
     cmd_part = raw[2:]
     stripped = cmd_part.lstrip()
@@ -94,50 +94,73 @@ def _handle_dollar_line(
     ), False
 
 
-def parse_blocks(source: str) -> list[ConsoleBlock]:
+def _parse_file_config(
+    lines: list[str],
+    directive_tag: str,
+) -> tuple[bool, str | None, frozenset[str], frozenset[str], str | None]:
+    """Return file-level directive defaults from the first matching ``<tag>-file:`` comment."""
+    file_re = re.compile(rf"^\s*<!--\s*{re.escape(directive_tag)}-file:\s*(.+?)\s*-->\s*$")
+    for line in lines:
+        m = file_re.match(line)
+        if m:
+            return _parse_directive_tokens(m.group(1))
+    return False, None, frozenset(), frozenset(), None
+
+
+def parse_blocks(source: str, directive: str = "pytest-markdown-console") -> list[ConsoleBlock]:
     """Parse all fenced console blocks from Markdown source text."""
+    directive_re = re.compile(rf"^\s*<!--\s*{re.escape(directive)}:\s*(.+?)\s*-->\s*$")
     blocks: list[ConsoleBlock] = []
     lines = source.splitlines()
+    f_notest, f_cwd, f_only, f_skip, f_shell = _parse_file_config(lines, directive)
     in_block = False
     current_block: ConsoleBlock | None = None
     current_cmd: Command | None = None
     pending_failure = False
+    indent = ""
 
     for lineno, raw in enumerate(lines, start=1):
         if not in_block:
-            m = _FENCE_OPEN.match(raw)
-            if m:
+            stripped = raw.lstrip()
+            if _FENCE_OPEN.match(stripped):
+                indent = raw[: len(raw) - len(stripped)]
                 in_block = True
-                notest, cwd_override, only, skip, shell = _parse_fence_tokens(m.group(1) or "")
+                prev_line = lines[lineno - 2] if lineno >= 2 else ""  # noqa: PLR2004
+                directive_match = directive_re.match(prev_line)
+                tokens_str = directive_match.group(1) if directive_match else ""
+                notest, cwd_override, only, skip, shell = _parse_directive_tokens(tokens_str)
                 current_block = ConsoleBlock(
                     line_number=lineno,
-                    notest=notest,
-                    cwd_override=cwd_override,
-                    only_platforms=only,
-                    skip_platforms=skip,
-                    shell=shell,
+                    notest=notest or f_notest,
+                    cwd_override=cwd_override if cwd_override is not None else f_cwd,
+                    only_platforms=only or f_only,
+                    skip_platforms=skip or f_skip,
+                    shell=shell if shell is not None else f_shell,
                 )
                 current_cmd = None
             continue
 
-        if _FENCE_CLOSE.match(raw):
+        line = raw.removeprefix(indent)
+
+        if _FENCE_CLOSE.match(line):
             _flush_cmd(current_cmd, current_block)
             current_cmd = None
             if current_block is not None:
                 blocks.append(current_block)
                 current_block = None
             in_block = False
+            indent = ""
             continue
 
-        if raw.startswith("$ "):
-            current_cmd, pending_failure = _handle_dollar_line(raw, current_cmd, current_block, pending_failure)
-        elif raw == "$":
+        if line.startswith("$ "):
+            current_cmd, pending_failure = _handle_dollar_line(line, current_cmd, current_block, pending_failure)
+        elif line == "$":
             _flush_cmd(current_cmd, current_block)
             current_cmd = None
         elif current_cmd is not None:
             if current_cmd.expected_output:
-                current_cmd.expected_output += "\n" + raw
+                current_cmd.expected_output += "\n" + line
             else:
-                current_cmd.expected_output = raw
+                current_cmd.expected_output = line
 
     return blocks
