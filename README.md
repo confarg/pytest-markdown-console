@@ -107,6 +107,33 @@ $ uv run myapp.py
 Relative paths are resolved relative to the Markdown file's location.
 
 
+### Use a temporary directory
+
+Each console block test automatically gets an isolated temporary directory, available as the `tmpdir` environment variable. This is useful when your app writes files during testing:
+
+````markdown
+```console
+$ uv run myapp.py --logdir "${tmpdir}/logs"
+Done.
+```
+````
+
+You can also use `${tmpdir}` in the `cwd:` directive to run the block's commands inside the temporary directory:
+
+````markdown
+<!-- pytest-markdown-console: cwd:${tmpdir} -->
+```console
+$ uv run myapp.py
+$ cat output.txt
+Hello, world!
+```
+````
+
+Each block gets its own dedicated directory, so blocks do not share state through the filesystem.
+
+> **Note for PowerShell users:** In `pwsh` command lines, environment variables use the `$env:` prefix. Reference the directory as `$env:tmpdir` instead of `${tmpdir}`. The `${tmpdir}` syntax in `cwd:` always works regardless of the target shell, since it is expanded by the plugin before the shell runs.
+
+
 ### Exclude a block from testing
 
 To exclude a block from being collected as a test at all, use the `notest` directive:

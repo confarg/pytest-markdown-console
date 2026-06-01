@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import sys
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import pytest
 
@@ -58,9 +58,18 @@ class ConsoleBlockItem(pytest.Item):
         if current in self.block.skip_platforms:
             pytest.skip(f"console block is skipped on platform {current!r}")
 
+        factory = cast(
+            "pytest.TempPathFactory | None",
+            getattr(self.config, "_tmp_path_factory", None),
+        )
+        tmpdir_path = str(factory.mktemp("md_console")) if factory is not None else None
+        extra_env: dict[str, str] = {"tmpdir": tmpdir_path} if tmpdir_path is not None else {}
+
         base_dir = self.path.parent
         if self.block.cwd_override is not None:
-            cwd_path = (base_dir / self.block.cwd_override).resolve()
+            raw_cwd = self.block.cwd_override
+            expanded_cwd = raw_cwd.replace("${tmpdir}", tmpdir_path) if tmpdir_path is not None else raw_cwd
+            cwd_path = (base_dir / expanded_cwd).resolve()
             if not cwd_path.is_dir():
                 msg = f"cwd path does not exist: {cwd_path}"
                 raise FileNotFoundError(msg)
@@ -72,7 +81,7 @@ class ConsoleBlockItem(pytest.Item):
         effective_shell = self.block.shell or ini_shell
 
         for command in self.block.commands:
-            cwd = run_command(command, cwd, shell=effective_shell)
+            cwd = run_command(command, cwd, shell=effective_shell, extra_env=extra_env)
 
     def repr_failure(self, excinfo: pytest.ExceptionInfo[BaseException]) -> str | pytest.TerminalRepr:
         """Format a human-readable failure message."""
