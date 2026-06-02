@@ -228,3 +228,86 @@ def test_multiple_blocks_both_run(pytester, md):
     md("```console\n$ echo a\na\n```\n\n```console\n$ echo b\nb\n```\n")
     result = pytester.runpytest("-v")
     result.assert_outcomes(passed=2)
+
+
+# ---------------------------------------------------------------------------
+# tmpdir env var
+# ---------------------------------------------------------------------------
+
+
+def test_tmpdir_env_var_is_a_directory(pytester, md):
+    """The tmpdir env var is set to an existing directory for each console block."""
+    md(
+        "```console\n"
+        "$ python -c \"import os, sys; v = os.environ.get('tmpdir'); sys.exit(0 if v and os.path.isdir(v) else 1)\"\n"
+        "```\n",
+    )
+    result = pytester.runpytest("-v")
+    result.assert_outcomes(passed=1)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="uses POSIX shell ${} expansion")
+def test_tmpdir_expands_in_posix_commands(pytester, md):
+    """On POSIX, ${tmpdir} expands to an existing directory path in shell commands."""
+    md('```console\n$ test -d "${tmpdir}"\n```\n')
+    result = pytester.runpytest("-v")
+    result.assert_outcomes(passed=1)
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="uses PowerShell $env: syntax")
+def test_tmpdir_accessible_in_powershell(pytester, md):
+    """On Windows, $env:tmpdir expands to an existing directory path in pwsh commands."""
+    md(
+        "```console\n$ if (-not (Test-Path $env:tmpdir -PathType Container)) { exit 1 }\n```\n",
+    )
+    result = pytester.runpytest("-v")
+    result.assert_outcomes(passed=1)
+
+
+def test_tmpdir_in_cwd_directive(pytester, md):
+    """cwd:${tmpdir} resolves to the block's tmpdir and the command runs there."""
+    md(
+        '<!-- pytest-markdown-console: cwd:${tmpdir} -->\n```console\n$ python -c "pass"\n```\n',
+    )
+    result = pytester.runpytest("-v")
+    result.assert_outcomes(passed=1)
+
+
+def test_tmpdir_in_cwd_missing_subdir_raises(pytester, md):
+    """cwd:${tmpdir}/nonexistent fails because the subdirectory does not exist."""
+    md(
+        '<!-- pytest-markdown-console: cwd:${tmpdir}/nonexistent_subdir -->\n```console\n$ python -c "pass"\n```\n',
+    )
+    result = pytester.runpytest("-v")
+    result.assert_outcomes(failed=1)
+
+
+def test_tmpdir_is_isolated_between_blocks(pytester, md):
+    """Each console block receives a distinct tmpdir path."""
+    md(
+        "```console\n"
+        "$ python -c \"import os; print(os.environ['tmpdir'])\"\n"
+        "...\n"
+        "```\n"
+        "\n"
+        "```console\n"
+        "$ python -c \"import os; print(os.environ['tmpdir'])\"\n"
+        "...\n"
+        "```\n",
+    )
+    result = pytester.runpytest("-v")
+    result.assert_outcomes(passed=2)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="uses POSIX mkdir")
+def test_cwd_tmpdir_mkdir_in_block(pytester, md):
+    """Within a block starting in ${tmpdir}, a mkdir'd subdir is visible to the next command."""
+    md(
+        "<!-- pytest-markdown-console: cwd:${tmpdir} -->\n"
+        "```console\n"
+        "$ mkdir mysubdir\n"
+        "$ python -c \"import os; assert os.path.isdir('mysubdir')\"\n"
+        "```\n",
+    )
+    result = pytester.runpytest("-v")
+    result.assert_outcomes(passed=1)

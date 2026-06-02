@@ -82,13 +82,26 @@ class ConsoleOutputMismatch(Exception):
         super().__init__(f"Output mismatch for: $ {cmd}")
 
 
-def run_command(command: Command, cwd: str, shell: str | None = None) -> str:
+def run_command(
+    command: Command,
+    cwd: str,
+    shell: str | None = None,
+    extra_env: dict[str, str] | None = None,
+) -> str:
     """Run a single command and return the updated cwd after execution.
+
+    extra_env, if provided, is merged on top of the current process environment
+    and passed to the subprocess.
 
     Raises ConsoleOutputMismatch, ConsoleUnexpectedSuccess, or ConsoleCommandFailed on failure.
     """
     resolved_shell = shell or ("pwsh" if _WINDOWS else "sh")
-    result = _run(command.cmd, cwd, shell=resolved_shell, capture_output=True, text=True, check=False)
+    env: dict[str, str] | None = None
+    if extra_env:
+        env = os.environ.copy()
+        env.update(extra_env)
+
+    result = _run(command.cmd, cwd, shell=resolved_shell, capture_output=True, text=True, check=False, env=env)
 
     actual = (result.stderr if command.expect_failure else result.stdout).rstrip("\n")
     expected = command.expected_output.rstrip("\n")
@@ -116,6 +129,7 @@ def run_command(command: Command, cwd: str, shell: str | None = None) -> str:
         capture_output=True,
         text=True,
         check=False,
+        env=env,
     )
     pwd_lines = [line for line in new_cwd_result.stdout.splitlines() if line]
     if pwd_lines:
