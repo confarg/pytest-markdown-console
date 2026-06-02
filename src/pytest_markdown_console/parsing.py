@@ -44,13 +44,14 @@ def _strip_error_comment(cmd: str) -> tuple[str, bool]:
 
 def _parse_directive_tokens(
     tokens_str: str,
-) -> tuple[bool, str | None, frozenset[str], frozenset[str], str | None]:
-    """Return (notest, cwd_override, only_platforms, skip_platforms, shell) from a directive token string."""
+) -> tuple[bool, str | None, frozenset[str], frozenset[str], str | None, tuple[str, ...]]:
+    """Return (notest, cwd_override, only_platforms, skip_platforms, shell, fixtures) from a directive token string."""
     notest = False
     cwd_override: str | None = None
     only: set[str] = set()
     skip: set[str] = set()
     shell: str | None = None
+    fixtures: tuple[str, ...] = ()
     for token in tokens_str.split():
         if token == "notest":  # noqa: S105
             notest = True
@@ -65,7 +66,9 @@ def _parse_directive_tokens(
                     skip.add(name[1:])
                 elif name:
                     only.add(name)
-    return notest, cwd_override, frozenset(only), frozenset(skip), shell
+        elif token.startswith("fixtures:"):
+            fixtures = tuple(n.strip() for n in token[len("fixtures:") :].split(",") if n.strip())
+    return notest, cwd_override, frozenset(only), frozenset(skip), shell, fixtures
 
 
 def _flush_cmd(current_cmd: Command | None, current_block: ConsoleBlock | None) -> None:
@@ -97,14 +100,14 @@ def _handle_dollar_line(
 def _parse_file_config(
     lines: list[str],
     directive_tag: str,
-) -> tuple[bool, str | None, frozenset[str], frozenset[str], str | None]:
+) -> tuple[bool, str | None, frozenset[str], frozenset[str], str | None, tuple[str, ...]]:
     """Return file-level directive defaults from the first matching ``<tag>-file:`` comment."""
     file_re = re.compile(rf"^\s*<!--\s*{re.escape(directive_tag)}-file:\s*(.+?)\s*-->\s*$")
     for line in lines:
         m = file_re.match(line)
         if m:
             return _parse_directive_tokens(m.group(1))
-    return False, None, frozenset(), frozenset(), None
+    return False, None, frozenset(), frozenset(), None, ()
 
 
 def parse_blocks(source: str, directive: str = "pytest-markdown-console") -> list[ConsoleBlock]:
@@ -112,7 +115,7 @@ def parse_blocks(source: str, directive: str = "pytest-markdown-console") -> lis
     directive_re = re.compile(rf"^\s*<!--\s*{re.escape(directive)}:\s*(.+?)\s*-->\s*$")
     blocks: list[ConsoleBlock] = []
     lines = source.splitlines()
-    f_notest, f_cwd, f_only, f_skip, f_shell = _parse_file_config(lines, directive)
+    f_notest, f_cwd, f_only, f_skip, f_shell, f_fixtures = _parse_file_config(lines, directive)
     in_block = False
     current_block: ConsoleBlock | None = None
     current_cmd: Command | None = None
@@ -128,7 +131,7 @@ def parse_blocks(source: str, directive: str = "pytest-markdown-console") -> lis
                 prev_line = lines[lineno - 2] if lineno >= 2 else ""  # noqa: PLR2004
                 directive_match = directive_re.match(prev_line)
                 tokens_str = directive_match.group(1) if directive_match else ""
-                notest, cwd_override, only, skip, shell = _parse_directive_tokens(tokens_str)
+                notest, cwd_override, only, skip, shell, fixtures = _parse_directive_tokens(tokens_str)
                 current_block = ConsoleBlock(
                     line_number=lineno,
                     notest=notest or f_notest,
@@ -136,6 +139,7 @@ def parse_blocks(source: str, directive: str = "pytest-markdown-console") -> lis
                     only_platforms=only or f_only,
                     skip_platforms=skip or f_skip,
                     shell=shell if shell is not None else f_shell,
+                    fixtures=fixtures or f_fixtures,
                 )
                 current_cmd = None
             continue

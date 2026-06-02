@@ -15,6 +15,13 @@ from .runner import (
     run_command,
 )
 
+try:
+    from _pytest.fixtures import FixtureLookupError as _FixtureLookupError
+    from _pytest.fixtures import TopRequest as _TopRequest
+except ImportError:
+    _TopRequest = None  # ty: ignore[invalid-assignment]  # optional private API, may not exist
+    _FixtureLookupError = None  # ty: ignore[invalid-assignment]  # optional private API, may not exist
+
 if TYPE_CHECKING:
     from collections.abc import Generator
     from pathlib import Path
@@ -47,6 +54,41 @@ class ConsoleBlockItem(pytest.Item):
         self.block = block
         self.add_marker("markdown_console")
 
+        factory = cast(
+            "pytest.TempPathFactory | None",
+            getattr(self.config, "_tmp_path_factory", None),
+        )
+        self._md_tmpdir: Path | None = factory.mktemp("md_console") if factory is not None else None
+
+        if block.fixtures:
+            self.add_marker(pytest.mark.usefixtures("markdown_console_tmpdir", *block.fixtures))
+            self._setup_fixture_request()
+
+    def _setup_fixture_request(self) -> None:
+        """Set up pytest fixture infrastructure for user-declared fixtures."""
+        if _TopRequest is None:
+            return
+        fm = self.session._fixturemanager  # type: ignore[attr-defined]
+        fixtureinfo = fm.getfixtureinfo(node=self, func=None, cls=None)
+        self._fixtureinfo = fixtureinfo  # type: ignore[attr-defined]
+        self.fixturenames: list[str] = fixtureinfo.names_closure
+        self.funcargs: dict[str, object] = {}
+        self._request = _TopRequest(self, _ispytest=True)  # ty: ignore[invalid-argument-type]  # ConsoleBlockItem satisfies the duck type
+
+    def setup(self) -> None:
+        """Resolve user-declared fixtures, if any."""
+        if not self.block.fixtures:
+            return
+        request = getattr(self, "_request", None)
+        if request is None:
+            return
+        try:
+            request._fillfixtures()
+        except Exception as e:
+            if _FixtureLookupError is not None and isinstance(e, _FixtureLookupError):
+                raise LookupError(str(e)) from None
+            raise
+
     def runtest(self) -> None:
         """Run all commands in the block and assert their output."""
         current = sys.platform
@@ -58,12 +100,14 @@ class ConsoleBlockItem(pytest.Item):
         if current in self.block.skip_platforms:
             pytest.skip(f"console block is skipped on platform {current!r}")
 
-        factory = cast(
-            "pytest.TempPathFactory | None",
-            getattr(self.config, "_tmp_path_factory", None),
-        )
-        tmpdir_path = str(factory.mktemp("md_console")) if factory is not None else None
+        tmpdir_path = str(self._md_tmpdir) if self._md_tmpdir is not None else None
         extra_env: dict[str, str] = {"tmpdir": tmpdir_path} if tmpdir_path is not None else {}
+
+        funcargs: dict[str, object] = getattr(self, "funcargs", {})
+        for name in self.block.fixtures:
+            result = funcargs.get(name)
+            if isinstance(result, dict):
+                extra_env.update(result)  # ty: ignore[no-matching-overload]  # runtime isinstance check guarantees dict[str, str]
 
         base_dir = self.path.parent
         if self.block.cwd_override is not None:
@@ -102,6 +146,20 @@ class ConsoleBlockItem(pytest.Item):
     def reportinfo(self) -> tuple[Path, int, str]:
         """Return location info for pytest's report header."""
         return self.path, self.block.line_number - 1, f"console block @ line {self.block.line_number}"
+
+
+@pytest.fixture
+def markdown_console_tmpdir(request: pytest.FixtureRequest) -> Path:
+    """The temporary directory for the current console block test.
+
+    Only available when running inside a console block item. Intended for use
+    by fixtures declared via the ``fixtures:`` directive — files written here
+    are accessible inside the block via the ``${tmpdir}`` environment variable.
+    """
+    node = request.node
+    if isinstance(node, ConsoleBlockItem) and node._md_tmpdir is not None:
+        return node._md_tmpdir
+    pytest.skip("markdown_console_tmpdir is only available inside a console block item")
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:

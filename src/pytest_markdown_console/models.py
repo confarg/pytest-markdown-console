@@ -25,3 +25,4 @@ class ConsoleBlock:
     only_platforms: frozenset[str] = field(default_factory=frozenset)  # empty = all
     skip_platforms: frozenset[str] = field(default_factory=frozenset)  # empty = none
     shell: str | None = None
+    fixtures: tuple[str, ...] = field(default_factory=tuple)
