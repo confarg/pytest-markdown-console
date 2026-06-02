@@ -179,6 +179,35 @@ Done.
 `yield` fixtures work normally — teardown runs after the block completes.
 
 
+### Hidden blocks
+
+Wrapping a fence in an HTML comment hides it from rendered output (e.g. on GitHub) while
+the plugin still finds and runs it. This is useful for setup steps that would clutter the
+documentation:
+
+````markdown
+<!-- pytest-markdown-console: notest -->
+<!--
+```console
+$ mkdir -p tmp
+```
+-->
+````
+
+To attach a directive to a hidden block, place it on the line immediately before the `<!--`
+opener:
+
+````markdown
+<!-- pytest-markdown-console: cwd:tmp -->
+<!--
+```console
+$ echo hi
+hi
+```
+-->
+````
+
+
 ### Exclude a block from testing
 
 To exclude a block from being collected as a test at all, use the `notest` directive:

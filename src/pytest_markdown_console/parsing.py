@@ -8,6 +8,7 @@ from .models import Command, ConsoleBlock
 
 _FENCE_OPEN = re.compile(r"^```\s*console\b", re.IGNORECASE)
 _FENCE_CLOSE = re.compile(r"^```\s*$")
+_HTML_COMMENT_OPEN = re.compile(r"^\s*<!--\s*$")
 
 
 def _comment_start(cmd: str) -> int | None:
@@ -97,6 +98,19 @@ def _handle_dollar_line(
     ), False
 
 
+def _find_block_directive(
+    lines: list[str],
+    lineno: int,
+    directive_re: re.Pattern[str],
+) -> re.Match[str] | None:
+    """Return the directive match for the fence at *lineno*, looking through a bare <!-- if needed."""
+    prev_line = lines[lineno - 2] if lineno >= 2 else ""  # noqa: PLR2004
+    m = directive_re.match(prev_line)
+    if m is None and lineno >= 3 and _HTML_COMMENT_OPEN.match(prev_line):  # noqa: PLR2004
+        m = directive_re.match(lines[lineno - 3])
+    return m
+
+
 def _parse_file_config(
     lines: list[str],
     directive_tag: str,
@@ -128,8 +142,7 @@ def parse_blocks(source: str, directive: str = "pytest-markdown-console") -> lis
             if _FENCE_OPEN.match(stripped):
                 indent = raw[: len(raw) - len(stripped)]
                 in_block = True
-                prev_line = lines[lineno - 2] if lineno >= 2 else ""  # noqa: PLR2004
-                directive_match = directive_re.match(prev_line)
+                directive_match = _find_block_directive(lines, lineno, directive_re)
                 tokens_str = directive_match.group(1) if directive_match else ""
                 notest, cwd_override, only, skip, shell, fixtures = _parse_directive_tokens(tokens_str)
                 current_block = ConsoleBlock(
