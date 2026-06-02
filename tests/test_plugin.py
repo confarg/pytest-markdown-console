@@ -311,3 +311,116 @@ def test_cwd_tmpdir_mkdir_in_block(pytester, md):
     )
     result = pytester.runpytest("-v")
     result.assert_outcomes(passed=1)
+
+
+# ---------------------------------------------------------------------------
+# fixtures: directive
+# ---------------------------------------------------------------------------
+
+
+def test_fixture_writes_to_tmpdir(pytester, md):
+    """A fixture that writes to markdown_console_tmpdir makes the file accessible via ${tmpdir}."""
+    pytester.makeconftest(
+        "import pytest\n"
+        "\n"
+        "@pytest.fixture\n"
+        "def write_greeting(markdown_console_tmpdir):\n"
+        "    (markdown_console_tmpdir / 'hello.txt').write_text('hi')\n",
+    )
+    md(
+        "<!-- pytest-markdown-console: fixtures:write_greeting -->\n"
+        "```console\n"
+        "$ python -c \"import pathlib,os;assert(pathlib.Path(os.environ['tmpdir'])/'hello.txt').read_text()=='hi'\"\n"
+        "```\n",
+    )
+    result = pytester.runpytest("-v")
+    result.assert_outcomes(passed=1)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="uses POSIX shell variable expansion")
+def test_fixture_returns_env_dict_posix(pytester, md):
+    """A fixture returning dict[str, str] injects those keys as environment variables (POSIX)."""
+    pytester.makeconftest(
+        "import pytest\n"
+        "\n"
+        "@pytest.fixture\n"
+        "def inject_var(markdown_console_tmpdir):\n"
+        "    return {'MY_GREETING': 'hello'}\n",
+    )
+    md(
+        '<!-- pytest-markdown-console: fixtures:inject_var -->\n```console\n$ test "${MY_GREETING}" = "hello"\n```\n',
+    )
+    result = pytester.runpytest("-v")
+    result.assert_outcomes(passed=1)
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="uses PowerShell $env: syntax")
+def test_fixture_returns_env_dict_windows(pytester, md):
+    """A fixture returning dict[str, str] injects those keys as environment variables (Windows)."""
+    pytester.makeconftest(
+        "import pytest\n"
+        "\n"
+        "@pytest.fixture\n"
+        "def inject_var(markdown_console_tmpdir):\n"
+        "    return {'MY_GREETING': 'hello'}\n",
+    )
+    md(
+        "<!-- pytest-markdown-console: fixtures:inject_var -->\n"
+        "```console\n"
+        "$ if ($env:MY_GREETING -ne 'hello') { exit 1 }\n"
+        "```\n",
+    )
+    result = pytester.runpytest("-v")
+    result.assert_outcomes(passed=1)
+
+
+def test_fixture_side_effect_only(pytester, md):
+    """A fixture returning None (side-effect only) is tolerated; files it wrote are accessible."""
+    pytester.makeconftest(
+        "import pytest\n"
+        "\n"
+        "@pytest.fixture\n"
+        "def write_file(markdown_console_tmpdir):\n"
+        "    (markdown_console_tmpdir / 'data.txt').write_text('ok')\n"
+        "    # returns None implicitly\n",
+    )
+    md(
+        "<!-- pytest-markdown-console: fixtures:write_file -->\n"
+        "```console\n"
+        "$ python -c \"import pathlib,os;assert(pathlib.Path(os.environ['tmpdir'])/'data.txt').read_text()=='ok'\"\n"
+        "```\n",
+    )
+    result = pytester.runpytest("-v")
+    result.assert_outcomes(passed=1)
+
+
+def test_multiple_fixtures(pytester, md):
+    """Multiple fixtures listed in fixtures: all run and their env dicts are merged."""
+    pytester.makeconftest(
+        "import pytest\n"
+        "\n"
+        "@pytest.fixture\n"
+        "def setup_a(markdown_console_tmpdir):\n"
+        "    return {'VAR_A': 'alpha'}\n"
+        "\n"
+        "@pytest.fixture\n"
+        "def setup_b(markdown_console_tmpdir):\n"
+        "    return {'VAR_B': 'beta'}\n",
+    )
+    md(
+        "<!-- pytest-markdown-console: fixtures:setup_a,setup_b -->\n"
+        "```console\n"
+        "$ python -c \"import os; assert (os.environ.get('VAR_A'), os.environ.get('VAR_B')) == ('alpha', 'beta')\"\n"
+        "```\n",
+    )
+    result = pytester.runpytest("-v")
+    result.assert_outcomes(passed=1)
+
+
+def test_unknown_fixture_fails(pytester, md):
+    """Naming a fixture that does not exist causes the test to fail."""
+    md(
+        '<!-- pytest-markdown-console: fixtures:does_not_exist -->\n```console\n$ python -c "pass"\n```\n',
+    )
+    result = pytester.runpytest("-v")
+    result.assert_outcomes(errors=1)

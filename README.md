@@ -134,6 +134,51 @@ Each block gets its own dedicated directory, so blocks do not share state throug
 > **Note for PowerShell users:** In `pwsh` command lines, environment variables use the `$env:` prefix. Reference the directory as `$env:tmpdir` instead of `${tmpdir}`. The `${tmpdir}` syntax in `cwd:` always works regardless of the target shell, since it is expanded by the plugin before the shell runs.
 
 
+### Use your own fixtures
+
+For more complex setup — seeding a config file, creating a mock, or running any other preparation logic — you can declare pytest fixtures and name them in a `fixtures:` directive. The fixtures run before the block's commands.
+
+The plugin provides a `markdown_console_tmpdir` fixture that returns the block's `tmpdir` as a `pathlib.Path`, so your fixtures can write files that the block can read via `${tmpdir}`:
+
+```python
+# conftest.py
+import pytest
+
+@pytest.fixture
+def write_config(markdown_console_tmpdir):
+    (markdown_console_tmpdir / "config.ini").write_text("[settings]\nkey=value\n")
+```
+
+````markdown
+<!-- pytest-markdown-console: fixtures:write_config -->
+```console
+$ uv run myapp.py --config "${tmpdir}/config.ini"
+Done.
+```
+````
+
+A fixture can also return a `dict[str, str]` to inject additional environment variables into the block's subprocess. If it returns `None` (or nothing), the return value is ignored:
+
+```python
+@pytest.fixture
+def inject_env(markdown_console_tmpdir):
+    (markdown_console_tmpdir / "seed.db").write_bytes(b"...")
+    return {"DB_PATH": str(markdown_console_tmpdir / "seed.db")}
+```
+
+Multiple fixtures can be listed, comma-separated:
+
+````markdown
+<!-- pytest-markdown-console: fixtures:write_config,inject_env -->
+```console
+$ uv run myapp.py
+Done.
+```
+````
+
+`yield` fixtures work normally — teardown runs after the block completes.
+
+
 ### Exclude a block from testing
 
 To exclude a block from being collected as a test at all, use the `notest` directive:
