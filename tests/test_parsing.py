@@ -434,3 +434,39 @@ def test_file_directive_no_effect_without_suffix():
     # so the block should get no shell from either source.
     block = parse_blocks(source)[0]
     assert block.shell is None
+
+
+# ---------------------------------------------------------------------------
+# Directives on HTML-comment-wrapped (hidden) blocks
+# ---------------------------------------------------------------------------
+
+
+def test_directive_through_html_comment_opener():
+    """A directive on the line before a bare <!-- is applied to the following fence."""
+    source = "<!-- pytest-markdown-console: notest -->\n<!--\n```console\n$ echo hi\n```\n-->\n"
+    block = parse_blocks(source)[0]
+    assert block.notest is True
+
+
+def test_bare_html_comment_opener_no_directive():
+    """A bare <!-- before the fence with no preceding directive leaves the block with defaults."""
+    source = "<!--\n```console\n$ echo hi\n```\n-->\n"
+    block = parse_blocks(source)[0]
+    assert block.notest is False
+    assert block.cwd_override is None
+    assert block.shell is None
+
+
+def test_directive_through_html_comment_opener_indented():
+    """A directive + bare <!-- before an indented fence inside a list item is applied."""
+    source = (
+        "- item\n\n"
+        "    <!-- pytest-markdown-console: notest -->\n"
+        "    <!--\n"
+        "    ```console\n"
+        "    $ echo hi\n"
+        "    ```\n"
+        "    -->\n"
+    )
+    block = parse_blocks(source)[0]
+    assert block.notest is True
