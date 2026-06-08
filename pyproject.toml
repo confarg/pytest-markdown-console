@@ -1,28 +1,21 @@
 [project]
-name = "pytest-markdown-console"
-version = "0.0.1"
-description = "A pytest extension to test console code blocks in markdown files."
-readme = "README.md"
 authors = [
-    { name = "confarg", email = "280620574+confarg@users.noreply.github.com" }
+    { name = "confarg", email = "280620574+confarg@users.noreply.github.com" },
 ]
-requires-python = ">=3.12"
-dependencies = [
-    "pytest>=8",
-]
+dependencies = ["pytest>=8"]
+description = "A pytest plugin to test console code blocks in markdown files."
 license = "MPL-2.0"
+name = "pytest-markdown-console"
+readme = "README.md"
+requires-python = ">=3.12"
+version = "0.0.1"
 
 [project.entry-points."pytest11"]
 markdown-console = "pytest_markdown_console"
 
 [build-system]
-requires = ["uv_build>=0.11.13,<0.12.0"]
 build-backend = "uv_build"
+requires      = ["uv_build>=0.11.13,<0.12.0"]
 
 [dependency-groups]
-dev = [
-    "pre-commit>=4.6.0",
-    "pytest>=9.0.3",
-    "pytest-cov>=7.1.0",
-    "ty>=0.0.40",
-]
+dev = ["pre-commit>=4.6.0", "pytest>=9.0.3", "pytest-cov>=7.1.0", "ty>=0.0.40"]
