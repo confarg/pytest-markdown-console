@@ -1,0 +1,22 @@
+name: CI / Tests
+
+on:
+  pull_request:
+    branches: [master]
+    types: [opened, reopened, synchronize]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13", "3.14"]
+        resolution: ["locked", "latest"]
+    steps:
+    - uses: actions/checkout@v4
+    - uses: astral-sh/setup-uv@v5
+    - if: matrix.resolution == 'locked'
+      run: uv run --locked --python ${{ matrix.python-version }} pytest ./tests/
+    - if: matrix.resolution == 'latest'
+      run: uv run --upgrade --python ${{ matrix.python-version }} pytest ./tests/
